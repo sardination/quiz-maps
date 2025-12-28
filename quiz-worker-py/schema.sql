@@ -49,6 +49,7 @@ CREATE TABLE "comparison"(
   CONSTRAINT UC_visit_id_compare_pub_id UNIQUE (visit_id, compare_pub_id)
 );
 
+-- DON'T USE THIS PASSWORD IN PRODUCTION!
 INSERT INTO user (username, password) VALUES ('suriya', '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8');
 
 INSERT INTO pub (place_id, name, frequency, day_of_week, time, timezone, address, lat, lng) VALUES (
