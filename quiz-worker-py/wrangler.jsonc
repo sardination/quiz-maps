@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "quiz-worker-py",
+	"name": "quiz-maps",
 	"main": "src/entry.py",
 	"compatibility_date": "2025-11-09",
 	"compatibility_flags": [
