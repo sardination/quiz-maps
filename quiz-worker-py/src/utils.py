@@ -1,6 +1,5 @@
 from datetime import date, datetime, timedelta, time, tzinfo
 import pytz
-import numpy as np
 import jwt
 from workers import Response
 
@@ -30,8 +29,8 @@ def logged_in_user(func):
 
 def bradley_terry_simple(comparisons, n_items, max_iter=100):
     """Simple Bradley-Terry implementation"""
-    wins = np.zeros(n_items)
-    games = np.zeros(n_items)
+    wins = [0.0] * n_items
+    games = [0.0] * n_items
 
     for winner, loser in comparisons:
         wins[winner] += 1
@@ -39,10 +38,11 @@ def bradley_terry_simple(comparisons, n_items, max_iter=100):
         games[loser] += 1
 
     # Iterative MM algorithm
-    params = np.ones(n_items)
+    params = [1.0] * n_items
     for _ in range(max_iter):
-        new_params = wins / games  # Simplified update
-        params = new_params / new_params.sum()
+        new_params = [w / g for w,g in zip(wins, games)]
+        param_sum = sum(new_params)
+        params = [p / param_sum for p in new_params]
 
     return params
 
