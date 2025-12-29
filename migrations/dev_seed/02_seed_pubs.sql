@@ -4,7 +4,7 @@ INSERT INTO pub (place_id, name, frequency, day_of_week, time, timezone, address
 );
 INSERT INTO pub (place_id, name, frequency, day_of_week, time, weeks_of_month, timezone, address, lat, lng) VALUES (
   '51a7b79ad07fda01c059805fc88f9dbd4a40f00103f901dd5c7c1501000000c002019203105468652050656e20262050656e63696ce203236f70656e7374726565746d61703a76656e75653a6e6f64652f34363535343339303639',
-  'The Pen & Pencil', 'monthly', 2, "19:30", '1,3', "Europe/London", 'The Pen & Pencil, 16 Tariff Street, Manchester, M1 2FN, United Kingdom', 53.4813709, -2.2316891
+  'The Pen & Pencil', 'specific-weeks', 2, "19:30", '1,3', "Europe/London", 'The Pen & Pencil, 16 Tariff Street, Manchester, M1 2FN, United Kingdom', 53.4813709, -2.2316891
 );
 
 INSERT INTO visit (pub_id, date, user_id) VALUES (1, '2025-01-14', 1);

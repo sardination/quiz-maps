@@ -165,6 +165,29 @@ async def post_pub(logged_in_user_id, db, body):
     )
     return Response.json(query.results)
 
+@logged_in_user
+async def put_pub(logged_in_user_id, db, body):
+    query = (
+        await db.prepare(
+            """
+                UPDATE pub
+                SET name = ?, frequency = ?, day_of_week = ?, weeks_of_month = ?, time = ?
+                WHERE id = ?
+                RETURNING *
+            """,
+        )
+        .bind(
+            body['name'],
+            body['frequency'],
+            body['dayOfWeek'],
+            ','.join(body.get('weeksOfMonth', [])),
+            body['time'],
+            body['id']
+        )
+        .run()
+    )
+    return Response.json(query.results)
+
 async def _get_visits(db, where_cols):
     if len(where_cols.keys()) == 0:
         query = (

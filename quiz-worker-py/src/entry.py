@@ -1,6 +1,6 @@
 from workers import Response, WorkerEntrypoint
 from submodule import (
-    get_pubs, post_pub,
+    get_pubs, post_pub, put_pub,
     get_visits, post_visit,
     post_comparison, put_comparison,
     get_rankings,
@@ -48,6 +48,8 @@ class Default(WorkerEntrypoint):
                 return await get_pubs(self.env.DB, params)
             elif request.method == 'POST':
                 return await post_pub(logged_in_user_id, self.env.DB, body)
+            elif request.method == 'PUT':
+                return await put_pub(logged_in_user_id, self.env.DB, body)
 
         elif pathname == '/api/visit':
             if request.method == 'GET':

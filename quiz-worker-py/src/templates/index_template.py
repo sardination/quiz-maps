@@ -8,7 +8,6 @@ def INDEX_TEMPLATE(
     upcoming_events,
     geoapify_key=None
 ):
-    # TODO: links to focus on pin from event
     # TODO: pin colors based on days
 
     all_pubs_dict = {
@@ -73,11 +72,13 @@ def INDEX_TEMPLATE(
         f"""
         {{
             id: {pub.id},
+            place_id: "{pub.place_id}",
             name: "{pub.name}",
             address: "{pub.address}",
             lat: {pub.lat},
             lng: {pub.lng},
             time: "{datetime.strptime(pub.time, "%H:%M").strftime("%I:%M%p")}",
+            raw_time: "{pub.time}",
             frequency: "{pub.frequency}",
             day_of_week: "{days_of_week[pub.day_of_week]}",
             weeks_of_month: "{get_js_weeks_of_month_str(pub)}"
@@ -96,7 +97,9 @@ def INDEX_TEMPLATE(
         const geoapifyApiKey = "{geoapify_key}";
 
         // Function to add location to database
-        async function addToDatabase(place_id, address, timezone, lat, lng) {{
+        async function addToDatabase(place_id, address, timezone, lat, lng, pub_id) {{
+            const edit = pub_id !== undefined;
+
             // TODO: prevent double-submit
             const formId = `form-${{place_id}}`;
             const form = document.getElementById(formId);
@@ -115,9 +118,13 @@ def INDEX_TEMPLATE(
                 lng: lng
             }};
 
+            if (edit) {{
+                scheduleData.id = pub_id;
+            }}
+
             // Send POST request
             const response = await fetch('/api/pub', {{
-                method: 'POST',
+                method: edit ? 'PUT' : 'POST',
                 headers: {{
                     'Content-Type': 'application/json'
                 }},
@@ -140,26 +147,68 @@ def INDEX_TEMPLATE(
             }}
         }}
 
-        // Add Geoapify Address Search control
-        const addressSearchControl = L.control.addressSearch(geoapifyApiKey, {{
-          position: 'topleft',
-          resultCallback: (loc) => {{
-            map.setView([loc.lat, loc.lon], 25);
+        function getInfoPopup(loc) {{
+            const freq = loc.frequency == 'weekly' ? `${{loc.day_of_week}}s` : `the ${{loc.weeks_of_month}} ${{loc.day_of_week}} of the month`
+
+            return `
+                <h4>${{loc.name}}</h4>
+                <p>${{loc.address}}</p>
+                <p>${{loc.time}} on ${{freq}}</p>
+                {'<button onclick="editPub(${loc.id})">Edit</button>' if logged_in_user_id is not None else ''}
+            `
+        }}
+
+        function editPub(locId) {{
+            const location = locations.filter((loc) => loc.id == locId)[0]
+            const marker = map._layers[locIdMap.get(locId)];
+
+            // Remove the info popup and bind the form
+            const popupContent = getPubFormPopup(location, true);
+            marker.closePopup()
+                  .unbindPopup()
+                  .bindPopup(popupContent)
+                  .openPopup();
+
+            // If the form is closed, then unbind the form popup and bind the info popup again
+            marker.getPopup()
+                  .on('remove', function () {{
+                    marker.unbindPopup()
+                          .bindPopup(getInfoPopup(location))
+                  }})
+        }}
+
+        function getPubFormPopup(loc, edit) {{
+            // TODO: fill the form if edit is true
 
             const formId = `form-${{loc.place_id}}`;
 
-            const loc_name = loc.name === undefined ? '' : loc.name;
+            const locName = loc.name === undefined ? '' : loc.name;
+            const formattedAddress = edit ? loc.address : loc.formatted;
+
+            const weekOfMonthCheckedMap = new Map();
+            for (var i=1; i <= 4; i++) {{
+                weekOfMonthCheckedMap.set(i, '');
+            }}
+            if (edit) {{
+                for (var i=0; i < loc.weeks_of_month.length; i++) {{
+                    weekOfMonthCheckedMap.set(parseInt(loc.weeks_of_month[i].substring(0,1)), 'checked');
+                }}
+            }}
+
+            var timeValue = "19:00";
+            if (edit) {{
+                timeValue = loc.raw_time;
+            }}
 
             // TODO: fill form with existing info and update button if quiz already exists
             const popupContent = `
                 <div>
-                    <!--<strong>${{loc.name}}</strong><br>-->
-                    ${{loc.formatted}}<br><br>
+                    ${{formattedAddress}}<br><br>
 
                     <form id="${{formId}}">
                         <label>Name:</label><br>
                         <input
-                            type="text" name="name" value="${{loc_name}}"
+                            type="text" name="name" value="${{locName}}"
                             required placeholder="Enter name"
                             oninvalid="this.setCustomValidity('Enter pub quiz name here')"
                             oninput="this.setCustomValidity('')"
@@ -168,43 +217,60 @@ def INDEX_TEMPLATE(
 
                         <label>Frequency:</label><br>
                         <select name="frequency" onchange="updateFormFields('${{formId}}')" style="width: 100%; margin-bottom: 10px;">
-                            <option value="weekly">Every week</option>
-                            <option value="specific-weeks">Specific weeks of month</option>
+                            <option value="weekly" ${{ edit && loc.frequency == 'weekly' ? 'selected' : ''}}>Every week</option>
+                            <option value="specific-weeks" ${{ edit && loc.frequency == 'specific-weeks' ? 'selected' : ''}}>Specific weeks of month</option>
                         </select><br>
 
-                        <div class="week-of-month-group" style="display: none; margin-bottom: 10px;">
+                        <div class="week-of-month-group" style="display: ${{ edit && loc.frequency == 'specific-weeks' ? 'block' : 'none'}}; margin-bottom: 10px;">
                             <label>Week(s) of month:</label><br>
-                            <label><input type="checkbox" name="weekOfMonth" value="1"> 1st</label>
-                            <label><input type="checkbox" name="weekOfMonth" value="2"> 2nd</label>
-                            <label><input type="checkbox" name="weekOfMonth" value="3"> 3rd</label>
-                            <label><input type="checkbox" name="weekOfMonth" value="4"> 4th</label><br>
+                            <label><input type="checkbox" name="weekOfMonth" value="1" ${{weekOfMonthCheckedMap.get(1)}}> 1st</label>
+                            <label><input type="checkbox" name="weekOfMonth" value="2" ${{weekOfMonthCheckedMap.get(2)}}> 2nd</label>
+                            <label><input type="checkbox" name="weekOfMonth" value="3" ${{weekOfMonthCheckedMap.get(3)}}> 3rd</label>
+                            <label><input type="checkbox" name="weekOfMonth" value="4" ${{weekOfMonthCheckedMap.get(4)}}> 4th</label><br>
                         </div>
 
                         <label>Day of week:</label><br>
                         <select name="dayOfWeek" style="width: 100%; margin-bottom: 10px;">
-                            <option value="0">Monday</option>
-                            <option value="1">Tuesday</option>
-                            <option value="2">Wednesday</option>
-                            <option value="3">Thursday</option>
-                            <option value="4">Friday</option>
-                            <option value="5">Saturday</option>
-                            <option value="6">Sunday</option>
+                            <option value="0" ${{loc.day_of_week == 'Monday' ? 'selected' : ''}}>Monday</option>
+                            <option value="1" ${{loc.day_of_week == 'Tuesday' ? 'selected' : ''}}>Tuesday</option>
+                            <option value="2" ${{loc.day_of_week == 'Wednesday' ? 'selected' : ''}}>Wednesday</option>
+                            <option value="3" ${{loc.day_of_week == 'Thursday' ? 'selected' : ''}}>Thursday</option>
+                            <option value="4" ${{loc.day_of_week == 'Friday' ? 'selected' : ''}}>Friday</option>
+                            <option value="5" ${{loc.day_of_week == 'Saturday' ? 'selected' : ''}}>Saturday</option>
+                            <option value="6" ${{loc.day_of_week == 'Sunday' ? 'selected' : ''}}>Sunday</option>
                         </select><br>
 
                         <label>Time:</label><br>
-                        <input type="time" name="time" value="19:00" style="width: 100%; margin-bottom: 10px;"><br>
+                        <input type="time" name="time" value="${{timeValue}}" style="width: 100%; margin-bottom: 10px;"><br>
 
-                        <button type="button" onclick="addToDatabase('${{loc.place_id}}', '${{loc.formatted}}', '${{loc.timezone.name}}', ${{loc.lat}}, ${{loc.lon}})">Add to Database</button>
+                        <button type="button" onclick="addToDatabase('${{loc.place_id}}', '${{loc.formatted}}', '${{edit ? loc.timezone : loc.timezone.name}}', ${{loc.lat}}, ${{loc.lon}}, ${{loc.id}})">${{edit ? 'Update' : 'Add'}}</button>
                     </form>
                 </div>
             `;
 
-            L.marker([loc.lat, loc.lon])
+            return popupContent;
+        }}
+
+        // Add Geoapify Address Search control
+        const addressSearchControl = L.control.addressSearch(geoapifyApiKey, {{
+          position: 'topleft',
+          resultCallback: (loc) => {{
+            map.setView([loc.lat, loc.lon], 25);
+
+            const popupContent = getPubFormPopup(loc, false)
+
+            const marker = L.marker([loc.lat, loc.lon])
                 .addTo(map)
                 .bindPopup(popupContent)
                 .openPopup();
 
-            // TODO: delete popup on search new location or add to database or cancel (TODO add to popup)
+            // If the popup is closed, remove the pin.
+            marker.getPopup()
+                  .on('remove', function () {{
+                    marker.remove()
+                  }})
+
+            // TODO: delete popup (+ remove pin if applicable) on search new location or add to database or cancel (TODO add to popup)
           }},
           suggestionsCallback: (suggestions) => {{
             // console.log(suggestions);
@@ -321,20 +387,14 @@ def INDEX_TEMPLATE(
 
             // Add markers to the map
             var markerLayer = L.layerGroup().addTo(map);
-            var placeIdMap = new Map();
+            var locIdMap = new Map();
             locations.forEach(loc => {{
-                var freq = loc.frequency == 'weekly' ? `${{loc.day_of_week}}s` : `the ${{loc.weeks_of_month}} ${{loc.day_of_week}} of the month`
-
                 var marker = L.marker([loc.lat, loc.lng], {{title: loc.name}})
                     .addTo(map)
-                    .bindPopup(`
-                        <h4>${{loc.name}}</h4>
-                        <p>${{loc.address}}</p>
-                        <p>${{loc.time}} on ${{freq}}</p>
-                    `);
-                var ret = markerLayer.addLayer(marker);
+                    .bindPopup(getInfoPopup(loc));
+                markerLayer.addLayer(marker);
 
-                placeIdMap.set(loc.id, marker._leaflet_id);
+                locIdMap.set(loc.id, marker._leaflet_id);
             }});
 
             {add_pub_to_db}
@@ -351,7 +411,7 @@ def INDEX_TEMPLATE(
 
             // Focus pin
             function focusPin(placeId) {{
-                var marker = map._layers[placeIdMap.get(placeId)];
+                var marker = map._layers[locIdMap.get(placeId)];
                 map.panTo(marker._latlng);
                 marker.openPopup();
             }}
