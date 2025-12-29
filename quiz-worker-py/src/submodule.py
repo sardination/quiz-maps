@@ -367,7 +367,27 @@ async def _get_rankings(db, params):
 
     # Assign order to original pub ids
     pub_id_params = {pub_idx_map_rev[i]: model_estimate[i] for i in range(n_pub_ids)}
-    pub_order = [pub_id for pub_id, param in sorted(pub_id_params.items(), key=lambda item: -item[1])]
+    pub_order = [
+        {'id': pub_id, 'score': pub_score}
+        for pub_id, pub_score in sorted(pub_id_params.items(), key=lambda item: -item[1])
+    ]
+
+    # Get total number of visits per pub
+    query = (
+        await db.prepare(
+            """
+            SELECT pub_id, COUNT(*) AS num_visits
+            FROM visit
+            GROUP BY pub_id;
+            """
+        ).run()
+    )
+    pub_visit_map = {
+        pub_info.pub_id: pub_info.num_visits
+        for pub_info in query.results
+    }
+    for pub_dict in pub_order:
+        pub_dict['visits'] = pub_visit_map.get(pub_dict['id'], 0)
 
     return pub_order
 async def get_rankings(db, params):

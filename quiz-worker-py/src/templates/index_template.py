@@ -21,18 +21,22 @@ def INDEX_TEMPLATE(
         f"""
         <tr>
             <td>{i+1}</td>
-            <td>{pan_a_tag(pub_id, all_pubs_dict[pub_id])}</td>
+            <td>{pan_a_tag(pub_info['id'], all_pubs_dict[pub_info['id']])}</td>
+            <td>{int(pub_info['score'] * 100)}</td>
+            <td>{pub_info['visits']}</td>
         </tr>
         """
-        for i, pub_id in enumerate(pub_ranking)
+        for i, pub_info in enumerate(pub_ranking)
     ])
 
-    unranked_pub_ids = set([pub.id for pub in all_pubs]) - set(pub_ranking)
+    unranked_pub_ids = set([pub.id for pub in all_pubs]) - set([pub_info['id'] for pub_info in pub_ranking])
     unranked_cells = '\n'.join([
         f"""
         <tr>
             <td>-</td>
             <td>{pan_a_tag(pub_id, all_pubs_dict[pub_id])}</td>
+            <td>-</td>
+            <td>-</td>
         </tr>
         """
         for pub_id in unranked_pub_ids
@@ -349,6 +353,8 @@ def INDEX_TEMPLATE(
                             <tr>
                                 <th>Rank</th>
                                 <th>Name</th>
+                                <th>Score</th>
+                                <th>Visits</th>
                             </tr>
                         </thead>
                         <tbody>

@@ -17,10 +17,10 @@ CREATE TABLE "pub"(
   "id" INTEGER,
   "place_id" TEXT,
   "name" TEXT,
-  "frequency" TEXT, -- "weekly" or "monthly"
+  "frequency" TEXT, -- "weekly" or "specific-weeks"
   "day_of_week" INTEGER, -- Monday is 0 and Sunday is 7
   "time" TEXT, -- must be formatted HH:MM on 24 hours
-  "weeks_of_month" TEXT, -- only for "monthly": should be comma-separated 1-4
+  "weeks_of_month" TEXT, -- only for "specific-weeks": should be comma-separated 1-4
   "timezone" TEXT, -- format like "Europe/London"
   "address" TEXT,
   "lat" REAL,
