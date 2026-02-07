@@ -252,6 +252,13 @@ async def post_visit(logged_in_user_id, db, body):
     )
     visit = query.results[0]
 
+    # Find appropriate noninclusive visited pubs to compare against
+    noninclusive_pubs = (
+        await db.prepare(
+            "SELECT DISTINCT pub_id AS id FROM visit WHERE pub_id != ?"
+        ).bind(visited_pub_id)
+        .run()
+    ).results
 
     NUM_COMPARE_PUBS = 5
     PUB_RANKING_RADIUS = 5
@@ -259,9 +266,14 @@ async def post_visit(logged_in_user_id, db, body):
     pub_ranking = await _get_rankings(db, {})
     pub_ranking = [p['id'] for p in pub_ranking]
 
+    # If there are any unranked pubs that have been visited, add them to the end of the list
+    for pub in noninclusive_pubs:
+        if pub.id not in pub_ranking:
+            pub_ranking.append(pub.id)
+
     compare_pub_ids = set()
     # Make sure that there are pubs to compare to and that if there's only 1, that it is not the visit pub
-    if len(pub_ranking) > 0 and not (len(pub_ranking) == 1 and pub_ranking[0] == visited_pub_id):
+    if len(pub_ranking) > 0:
         # Check if pub is already in ranking. If so, use a radius and get 5 within the radius.
         #      If not, then get 5 spread out across whole ranking.
         matching_ranked_pubs = list(filter(lambda r: r[1] == visited_pub_id, enumerate(pub_ranking)))
