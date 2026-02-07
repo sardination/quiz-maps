@@ -1,9 +1,11 @@
 from workers import Response
 
 from argon2 import PasswordHasher
+import math
+from js import Object
 import json
 import random
-from js import Object
+
 from templates.index_template import INDEX_TEMPLATE
 from templates.login_template import LOGIN_TEMPLATE
 from templates.profile_template import PROFILE_TEMPLATE
@@ -239,36 +241,67 @@ async def get_visits(db, params):
 
 @logged_in_user
 async def post_visit(logged_in_user_id, db, body):
+    visited_pub_id = int(body['pub_id'])
+
     query = (
         await db.prepare(
             "INSERT INTO visit (user_id, pub_id, date) VALUES (?,?,?) RETURNING *",
         )
-        .bind(logged_in_user_id, body['pub_id'], body['date'])
+        .bind(logged_in_user_id, visited_pub_id, body['date'])
         .run()
     )
     visit = query.results[0]
 
-    # Find (up to) three random noninclusive visited pubs to compare against
+    # Find appropriate noninclusive visited pubs to compare against
     noninclusive_pubs = (
         await db.prepare(
             "SELECT DISTINCT pub_id AS id FROM visit WHERE pub_id != ?"
-        ).bind(body['pub_id'])
+        ).bind(visited_pub_id)
         .run()
     ).results
-    compare_pubs = random.sample(noninclusive_pubs, min(3, len((noninclusive_pubs))))
+
+
+    NUM_COMPARE_PUBS = 5
+    PUB_RANKING_RADIUS = 5
+
+    pub_ranking = await _get_rankings(db, {})
+    pub_ranking = [p['id'] for p in pub_ranking]
+    # Check if pub is already in ranking. If so, use a radius and get 5 within the radius.
+    #      If not, then get 5 spread out across whole ranking.
+    matching_ranked_pubs = list(filter(lambda r: r[1] == visited_pub_id, enumerate(pub_ranking)))
+    compare_pub_ids = []
+    if len(matching_ranked_pubs) == 0:
+        pub_ranking = list(filter(lambda r: r != visited_pub_id, pub_ranking))
+        increment = math.ceil(len(pub_ranking) / NUM_COMPARE_PUBS)
+        for i in range(0, len(pub_ranking), increment):
+            compare_pub_ids.extend(random.sample(pub_ranking[i:i+increment], 1))
+    else:
+        visited_ranked_pub_idx = matching_ranked_pubs[0][0]
+        compare_pub_count = 0
+        min_ranked_pub_idx = max(0, visited_ranked_pub_idx - PUB_RANKING_RADIUS)
+        max_ranked_pub_idx = min(visited_ranked_pub_idx + PUB_RANKING_RADIUS, len(pub_ranking) - 1)
+        if min_ranked_pub_idx < visited_ranked_pub_idx:
+            compare_pub_count = min(NUM_COMPARE_PUBS // 2, visited_ranked_pub_idx - min_ranked_pub_idx)
+            compare_pub_ids.extend(random.sample(pub_ranking[min_ranked_pub_idx:visited_ranked_pub_idx], compare_pub_count))
+        if max_ranked_pub_idx > visited_ranked_pub_idx:
+            compare_pub_count = min(NUM_COMPARE_PUBS - compare_pub_count, max_ranked_pub_idx - visited_ranked_pub_idx)
+            compare_pub_ids.extend(random.sample(pub_ranking[visited_ranked_pub_idx + 1:max_ranked_pub_idx + 1], compare_pub_count))
+
+    # Just in case there are repeats (shouldn't happen):
+    compare_pub_ids = set(compare_pub_ids)
 
     response = Object.new()
     response.visit = visit
 
-    if len(compare_pubs) > 0:
+    if len(compare_pub_ids) > 0:
         # Create empty comparisons
         bind_values = []
-        for compare_pub in compare_pubs:
-            bind_values.extend([visit.id, compare_pub.id])
+        for compare_pub_id in compare_pub_ids:
+            bind_values.extend([visit.id, compare_pub_id])
 
         comparison_query = (
             await db.prepare(
-                f"INSERT INTO comparison (visit_id, compare_pub_id) VALUES {', '.join(["(?,?)"] * len(compare_pubs))} RETURNING *"
+                f"INSERT INTO comparison (visit_id, compare_pub_id) VALUES {', '.join(["(?,?)"] * len(compare_pub_ids))} RETURNING *"
             ).bind(*bind_values)
             .run()
         )
