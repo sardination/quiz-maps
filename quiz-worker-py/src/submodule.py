@@ -20,6 +20,7 @@ async def index(logged_in_user_id, db, geoapify_key=None):
     pub_ranking = await _get_rankings(db, {})
     all_pubs = await _get_all_pubs(db)
     upcoming_events = get_upcoming_events(all_pubs)
+    all_cities = await _get_cities(db)
 
     return Response(
         INDEX_TEMPLATE(
@@ -27,6 +28,7 @@ async def index(logged_in_user_id, db, geoapify_key=None):
             all_pubs,
             pub_ranking,
             upcoming_events,
+            all_cities,
             geoapify_key=geoapify_key
         ),
         headers={"Content-Type": "text/html"}
@@ -147,8 +149,8 @@ async def post_pub(logged_in_user_id, db, body):
                 INSERT INTO pub (
                     place_id, name, address, frequency,
                     day_of_week, weeks_of_month, time, timezone,
-                    lat, lng, active
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING *
+                    lat, lng, city, active
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *
             """,
         )
         .bind(
@@ -162,6 +164,7 @@ async def post_pub(logged_in_user_id, db, body):
             body['timezone'],
             body['lat'],
             body['lng'],
+            body['city'],
             body['active']
         )
         .run()
@@ -366,6 +369,21 @@ async def put_comparison(logged_in_user_id, db, body):
     )
 
     return Response.json(query.results)
+
+async def _get_cities(db):
+    query = (
+        await db.prepare(
+            """
+            SELECT city, MIN(lat) AS min_lat, MIN(lng) AS min_lng, MAX(lat) AS max_lat, MAX(lng) AS max_lng
+            FROM pub
+            GROUP BY city
+            """
+        )
+        .run()
+    )
+    print(query.results)
+
+    return query.results
 
 async def _get_rankings(db, params):
     # TODO: support getting rankings for just one user

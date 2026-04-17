@@ -6,51 +6,55 @@ def INDEX_TEMPLATE(
     all_pubs,
     pub_ranking,
     upcoming_events,
+    all_cities,
     geoapify_key=None
 ):
     # TODO: pin colors based on days
 
     all_pubs_dict = {
-        pub.id: pub.name
+        pub.id: pub
         for pub in all_pubs
     }
 
     pan_a_tag = lambda pub_id, content: f'<a class="pantag" href="#" onclick="focusPin({pub_id})">{content}</a>'
 
-    leaderboard_cells = '\n'.join([
+    ranked_pubs = ',\n'.join([
         f"""
-        <tr>
-            <td>{i+1}</td>
-            <td>{pan_a_tag(pub_info['id'], all_pubs_dict[pub_info['id']])}</td>
-            <td>{int(pub_info['score'] * 100)}</td>
-            <td>{pub_info['visits']}</td>
-        </tr>
+        {{
+            lat: {all_pubs_dict[pub_info['id']].lat},
+            lng: {all_pubs_dict[pub_info['id']].lng},
+            score: {int(pub_info['score'] * 100)},
+            num_visits: {pub_info['visits']},
+            a_tag: `{pan_a_tag(pub_info['id'], all_pubs_dict[pub_info['id']].name)}`
+        }}
         """
         for i, pub_info in enumerate(pub_ranking)
     ])
 
     unranked_pub_ids = set([pub.id for pub in all_pubs]) - set([pub_info['id'] for pub_info in pub_ranking])
-    unranked_cells = '\n'.join([
+    unranked_pubs = ',\n'.join([
         f"""
-        <tr>
-            <td>-</td>
-            <td>{pan_a_tag(pub_id, all_pubs_dict[pub_id])}</td>
-            <td>-</td>
-            <td>-</td>
-        </tr>
+        {{
+            lat: {all_pubs_dict[pub_id].lat},
+            lng: {all_pubs_dict[pub_id].lng},
+            a_tag: `{pan_a_tag(pub_id, all_pubs_dict[pub_id].name)}`
+        }}
         """
         for pub_id in unranked_pub_ids
     ])
 
-    event_list_items = '\n'.join([
+    upcoming_event_items = ',\n'.join([
+        f"""
+        {{
+            lat: {pub.lat},
+            lng: {pub.lng},
+            event_date: "{event_dt.strftime("%A, %B %d")}",
+            a_tag: `{pan_a_tag(pub.id, pub.name)}`,
+            event_time: "{event_dt.strftime("%I:%M %p")}"
+        }}
         """
-        <li>{} - {} @ {}</li>
-        """.format(
-            event_dt.strftime("%A, %B %d"),
-            pan_a_tag(pub.id, pub.name),
-            event_dt.strftime("%I:%M %p")
-        )
-    for pub, event_dt in upcoming_events])
+        for pub, event_dt in upcoming_events
+    ])
 
     days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     week_ordinals = ["", "1st", "2nd", "3rd", "4th"]
@@ -72,7 +76,7 @@ def INDEX_TEMPLATE(
 
         return weeks_of_month_str
 
-    locations = '\n'.join([
+    locations = ',\n'.join([
         f"""
         {{
             id: {pub.id},
@@ -81,15 +85,29 @@ def INDEX_TEMPLATE(
             address: "{pub.address}",
             lat: {pub.lat},
             lng: {pub.lng},
+            city: "{pub.city}",
             time: "{datetime.strptime(pub.time, "%H:%M").strftime("%I:%M%p")}",
             raw_time: "{pub.time}",
             frequency: "{pub.frequency}",
             day_of_week: "{days_of_week[pub.day_of_week]}",
             weeks_of_month: "{get_js_weeks_of_month_str(pub)}",
             active: {pub.active}
-        }},
+        }}
         """
         for pub in all_pubs
+    ])
+
+    cities = ',\n'.join([
+        f"""
+        {{
+            city: "{city.city}",
+            min_lat: {city.min_lat},
+            min_lng: {city.min_lng},
+            max_lat: {city.max_lat},
+            max_lng: {city.max_lng},
+        }}
+        """
+        for city in all_cities
     ])
 
     login_href = '/profile' if logged_in_user_id is not None else '/login'
@@ -114,6 +132,7 @@ def INDEX_TEMPLATE(
             const timezone = edit ? currentEditLoc.timezone : currentEditLoc.timezone.name;
             const lat = currentEditLoc.lat;
             const lng = edit ? currentEditLoc.lng : currentEditLoc.lon;
+            const city = currentEditLoc.city
 
             // TODO: prevent double-submit
             const formId = `form-${{place_id}}`;
@@ -131,6 +150,7 @@ def INDEX_TEMPLATE(
                 timezone: timezone,
                 lat: lat,
                 lng: lng,
+                city: city,
                 active: formData.get('active') == '1' ? 1 : 0
             }};
 
@@ -184,6 +204,7 @@ def INDEX_TEMPLATE(
         }}
 
         function getPubFormPopup(loc, edit) {{
+            console.log(loc);
             currentEditLoc = loc;
 
             const formId = `form-${{loc.place_id}}`;
@@ -302,6 +323,9 @@ def INDEX_TEMPLATE(
         <script src="https://unpkg.com/@geoapify/leaflet-address-search-plugin@^1/dist/L.Control.GeoapifyAddressSearch.min.js"></script>
         <link rel="stylesheet" href="https://unpkg.com/leaflet-search@3.0.9/dist/leaflet-search.min.css" />
         <script src="https://unpkg.com/leaflet-search@3.0.9/dist/leaflet-search.min.js"></script>
+        <link href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/base/jquery-ui.css" rel="stylesheet" type="text/css"/>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
         <style>
           .circle-btn {{
             position: fixed;
@@ -336,6 +360,12 @@ def INDEX_TEMPLATE(
           a.pantag:visited {{
             color: blue;
           }}
+
+          .ui-autocomplete {{
+            cursor:pointer;
+            height:120px;
+            overflow-y:scroll;
+          }}
         </style>
     </head>
     <body>
@@ -345,10 +375,15 @@ def INDEX_TEMPLATE(
             </div>
 
             <div style="flex: 1; padding: 20px; overflow-y: auto;">
+                <div>
+                    <p>Select a city or "ALL" to filter the map, or zoom on the map to set your own bounds</p>
+                    <input type="text" id="cityDropdown" placeholder="Pick a city" value="Manchester" />
+                </div>
+
                 <div style="margin-bottom: 40px;">
                     <h2>Upcoming Events (Next 7 Days)</h2>
                     <ul id="events-list">
-                        {event_list_items}
+
                     </ul>
                 </div>
 
@@ -363,17 +398,84 @@ def INDEX_TEMPLATE(
                                 <th>Visits</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {leaderboard_cells}
-                            {unranked_cells}
+                        <tbody id="leaderboardBody">
+
                         </tbody>
                     </table>
                 </div>
             </div>
             <button class="circle-btn" onclick="window.location.href='{login_href}';">{login_icon}</button>
         </div>
-
+</body>
         <script>
+            // Event and ranking info
+            const rankedPubs = [
+                {ranked_pubs}
+            ];
+            const unrankedPubs = [
+                {unranked_pubs}
+            ];
+            const eventItems = [
+                {upcoming_event_items}
+            ];
+
+            function pubInBounds(bounds, pubLat, pubLng) {{
+                const minLat = bounds[0][0];
+                const minLng = bounds[0][1];
+                const maxLat = bounds[1][0];
+                const maxLng = bounds[1][1];
+
+                return pubLat >= minLat && pubLat <= maxLat && pubLng >= minLng && pubLng <= maxLng;
+            }}
+
+            function setLeaderboard() {{
+                const bounds = getMapBounds();
+                const showRankedPubs = rankedPubs.filter(
+                    pub => pubInBounds(bounds, pub.lat, pub.lng)
+                );
+                const showUnrankedPubs = unrankedPubs.filter(
+                    pub => pubInBounds(bounds, pub.lat, pub.lng)
+                );
+
+                const tbodyElement = $('#leaderboardBody');
+
+                tbodyElement.empty();
+
+                for (var i=0; i < showRankedPubs.length; i++) {{
+                    const pub = showRankedPubs[i];
+                    const newRow = `<tr>
+                        <td>${{i+1}}</td>
+                        <td>${{pub.a_tag}}</td>
+                        <td>${{pub.score}}</td>
+                        <td>${{pub.num_visits}}</td>
+                    </tr>`
+                    tbodyElement.append(newRow);
+                }}
+
+                for (var i=0; i < showUnrankedPubs.length; i++) {{
+                    const pub = showUnrankedPubs[i];
+                    const newRow = `<tr>
+                        <td>-</td>
+                        <td>${{pub.a_tag}}</td>
+                        <td>-</td>
+                        <td>-</td>
+                    </tr>`
+                    tbodyElement.append(newRow);
+                }}
+            }}
+
+            function setUpcomingEvents() {{
+                $('#events-list').empty();
+
+                const bounds = getMapBounds();
+                const showEventItems = eventItems.filter(event => pubInBounds(bounds, event.lat, event.lng));
+                for (var i=0; i < showEventItems.length; i++) {{
+                    const event = showEventItems[i];
+                    const newItem = `<li>${{event.event_date}} - ${{event.a_tag}} @ ${{event.event_time}}</li>`;
+                    $('#events-list').append(newItem);
+                }}
+            }}
+
             function getInfoPopup(loc) {{
                 const freq = loc.frequency == 'weekly' ? `${{loc.day_of_week}}s` : `the ${{loc.weeks_of_month}} ${{loc.day_of_week}} of the month`
 
@@ -390,18 +492,44 @@ def INDEX_TEMPLATE(
                 {locations}
             ];
 
+            // Pub cities
+            const lats = locations.map(loc => loc.lat);
+            const lngs = locations.map(loc => loc.lng);
+
+            const cities = [
+                {cities},
+                {{city: 'ALL', min_lat: Math.min(...lats), min_lng: Math.min(...lngs), max_lat: Math.max(...lats), max_lng: Math.max(...lngs)}}
+            ];
+
             // Initialize the map to Manchester
+            const initCity = 'Manchester';
             const map = L.map('map', {{zoomControl: false}}).setView([53.483959, -2.244644], 14);
 
-            // If enough locations, fit map bounds to locations
-            if (locations.length >= 2) {{
-                const lats = locations.map(loc => loc.lat);
-                const lngs = locations.map(loc => loc.lng);
-                map.fitBounds([
-                    [Math.min(...lats), Math.min(...lngs)],
-                    [Math.max(...lats), Math.max(...lngs)]
-                ]);
+            function getMapBounds() {{
+                return [
+                    [map.getBounds().getSouth(), map.getBounds().getWest()],
+                    [map.getBounds().getNorth(), map.getBounds().getEast()]
+                ];
             }}
+
+            function getCityInfo(city) {{
+                var cityInfo;
+                for (var i=0; i < cities.length; i++) {{
+                    cityInfo = cities[i];
+                    if (cityInfo.city === city) break;
+                }}
+                return cityInfo;
+            }}
+
+            function zoomToCity(city) {{
+                const cityInfo = getCityInfo(city);
+                map.fitBounds([
+                    [cityInfo.min_lat, cityInfo.min_lng],
+                    [cityInfo.max_lat, cityInfo.max_lng]
+                ], {{ padding: [50, 50] }});
+            }}
+
+            zoomToCity(initCity);
 
             // Add OpenStreetMap tiles
             L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
@@ -438,8 +566,35 @@ def INDEX_TEMPLATE(
                 map.panTo(marker._latlng);
                 marker.openPopup();
             }}
+
+            // Get map bounds
+            var currentBounds = null;
+            map.on('moveend', function(e) {{
+                const newBounds = getMapBounds();
+                if (currentBounds != null && newBounds != currentBounds) {{
+                    $('#cityDropdown').val('Custom Location');
+                }}
+                currentBounds = newBounds;
+                setLeaderboard();
+                setUpcomingEvents();
+            }})
+
+            // Populate city dropdown
+            $(document).ready(function() {{
+                $('#cityDropdown').autocomplete({{
+                    source: cities.map(c => c.city),
+                    minLength: 0,
+                    scroll: true,
+                    select: function(event, ui) {{
+                        currentBounds = null;
+                        zoomToCity(ui.item.value);
+                    }}
+                }}).on('focus', function () {{
+                  $(this).autocomplete('search', '');
+                }});
+            }});
         </script>
-    </body>
+
     </html>
     """
 
